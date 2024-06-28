@@ -10,6 +10,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -35,6 +36,7 @@ var (
 	versionFlag                = flag.Bool("version", false, "print the current version")
 	warnOnUnboundMethods       = flag.Bool("warn_on_unbound_methods", false, "emit a warning message if an RPC method has no HttpRule annotation")
 	generateUnboundMethods     = flag.Bool("generate_unbound_methods", false, "generate proxy methods even for RPC methods that have no HttpRule annotation")
+	separatePackage            = flag.Bool("separate_package", false, "generate gateway code to v1gateway package (requires standalone=true).")
 
 	_ = flag.Bool("logtostderr", false, "Legacy glog compatibility. This flag is a no-op, you can safely remove it")
 )
@@ -58,14 +60,21 @@ func main() {
 		ParamFunc: flag.CommandLine.Set,
 	}.Run(func(gen *protogen.Plugin) error {
 		reg := descriptor.NewRegistry()
-
 		if err := applyFlags(reg); err != nil {
 			return err
 		}
-
+		if *separatePackage && !*standalone {
+			return errors.New("option separate_package=true must be specified with standalone=true")
+		}
+		generator := gengateway.New(
+			reg,
+			*useRequestContext,
+			*registerFuncSuffix,
+			*allowPatchFeature,
+			*standalone,
+			*separatePackage,
+		)
 		codegenerator.SetSupportedFeaturesOnPluginGen(gen)
-
-		generator := gengateway.New(reg, *useRequestContext, *registerFuncSuffix, *allowPatchFeature, *standalone)
 
 		if grpclog.V(1) {
 			grpclog.Infof("Parsing code generator request")
@@ -120,6 +129,7 @@ func applyFlags(reg *descriptor.Registry) error {
 	}
 	reg.SetStandalone(*standalone)
 	reg.SetAllowDeleteBody(*allowDeleteBody)
+	reg.SetSeparatePackage(*separatePackage)
 
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "allow_repeated_fields_in_body" {

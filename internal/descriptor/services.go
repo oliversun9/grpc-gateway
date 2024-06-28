@@ -29,6 +29,7 @@ func (r *Registry) loadServices(file *File) error {
 			ServiceDescriptorProto: sd,
 			ForcePrefixedName:      r.standalone,
 		}
+		r.IncludeAdditionalImports(svc, file.GoPkg)
 		for _, md := range sd.GetMethod() {
 			if grpclog.V(2) {
 				grpclog.Infof("Processing %s.%s", sd.GetName(), md.GetName())
