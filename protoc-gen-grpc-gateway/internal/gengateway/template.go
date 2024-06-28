@@ -15,6 +15,7 @@ import (
 
 type param struct {
 	*descriptor.File
+	ReplacedByPackage  string
 	Imports            []descriptor.GoPackage
 	UseRequestContext  bool
 	RegisterFuncSuffix string
@@ -172,8 +173,10 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 			methName := casing.Camel(*meth.Name)
 			meth.Name = &methName
 			for _, b := range meth.Bindings {
-				if err := reg.CheckDuplicateAnnotation(b.HTTPMethod, b.PathTmpl.Template, svc); err != nil {
-					return "", err
+				if p.ReplacedByPackage == "" {
+					if err := reg.CheckDuplicateAnnotation(b.HTTPMethod, b.PathTmpl.Template, svc); err != nil {
+						return "", err
+					}
 				}
 
 				methodWithBindingsSeen = true
@@ -226,7 +229,9 @@ var (
 
 {{if not .OmitPackageDoc}}/*
 Package {{.GoPkg.Name}} is a reverse proxy.
-
+{{if .ReplacedByPackage}}
+Deprecated: replaced by "{{.ReplacedByPackage}}"
+{{end}}
 It translates gRPC into RESTful JSON APIs.
 */{{end}}
 package {{.GoPkg.Name}}
