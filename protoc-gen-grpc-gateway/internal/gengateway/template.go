@@ -15,7 +15,7 @@ import (
 
 type param struct {
 	*descriptor.File
-	ReplacedByPackage  string
+	ReplacedByPackage  *descriptor.GoPackage
 	Imports            []descriptor.GoPackage
 	UseRequestContext  bool
 	RegisterFuncSuffix string
@@ -25,6 +25,7 @@ type param struct {
 
 type binding struct {
 	*descriptor.Binding
+	IsReplaced        bool
 	Registry          *descriptor.Registry
 	AllowPatchFeature bool
 }
@@ -144,6 +145,7 @@ func (f queryParamFilter) String() string {
 }
 
 type trailerParams struct {
+	DelegatePackage    string
 	Services           []*descriptor.Service
 	UseRequestContext  bool
 	RegisterFuncSuffix string
@@ -173,7 +175,7 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 			methName := casing.Camel(*meth.Name)
 			meth.Name = &methName
 			for _, b := range meth.Bindings {
-				if p.ReplacedByPackage == "" {
+				if p.ReplacedByPackage == nil {
 					if err := reg.CheckDuplicateAnnotation(b.HTTPMethod, b.PathTmpl.Template, svc); err != nil {
 						return "", err
 					}
@@ -181,6 +183,7 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 
 				methodWithBindingsSeen = true
 				if err := handlerTemplate.Execute(w, binding{
+					IsReplaced:        p.ReplacedByPackage != nil,
 					Binding:           b,
 					Registry:          reg,
 					AllowPatchFeature: p.AllowPatchFeature,
@@ -190,6 +193,7 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 
 				// Local
 				if err := localHandlerTemplate.Execute(w, binding{
+					IsReplaced:        p.ReplacedByPackage != nil,
 					Binding:           b,
 					Registry:          reg,
 					AllowPatchFeature: p.AllowPatchFeature,
@@ -210,6 +214,12 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 		Services:           targetServices,
 		UseRequestContext:  p.UseRequestContext,
 		RegisterFuncSuffix: p.RegisterFuncSuffix,
+	}
+	if p.ReplacedByPackage != nil {
+		tp.DelegatePackage = p.ReplacedByPackage.Path
+		if p.ReplacedByPackage.Alias != "" {
+			tp.DelegatePackage = p.ReplacedByPackage.Alias
+		}
 	}
 	// Local
 	if err := localTrailerTemplate.Execute(w, tp); err != nil {
@@ -251,7 +261,8 @@ var _ = metadata.Join
 `))
 
 	handlerTemplate = template.Must(template.New("handler").Parse(`
-{{if and .Method.GetClientStreaming .Method.GetServerStreaming}}
+{{if .IsReplaced }}
+{{else if and .Method.GetClientStreaming .Method.GetServerStreaming}}
 {{template "bidi-streaming-request-func" .}}
 {{else if .Method.GetClientStreaming}}
 {{template "client-streaming-request-func" .}}
@@ -487,7 +498,8 @@ var (
 `))
 
 	localHandlerTemplate = template.Must(template.New("local-handler").Parse(`
-{{if and .Method.GetClientStreaming .Method.GetServerStreaming}}
+{{if .IsReplaced }}
+{{else if and .Method.GetClientStreaming .Method.GetServerStreaming}}
 {{else if .Method.GetClientStreaming}}
 {{else if .Method.GetServerStreaming}}
 {{else}}
@@ -612,12 +624,16 @@ func local_request_{{.Method.Service.GetName}}_{{.Method.GetName}}_{{.Index}}(ct
 
 	localTrailerTemplate = template.Must(template.New("local-trailer").Parse(`
 {{$UseRequestContext := .UseRequestContext}}
+{{$DelegatePackage := .DelegatePackage}}
 {{range $svc := .Services}}
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server registers the http handlers for service {{$svc.GetName}} to "mux".
 // UnaryRPC     :call {{$svc.GetName}}Server directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
 // Note that using this registration option will cause many gRPC library features to stop working. Consider using Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint instead.
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx context.Context, mux *runtime.ServeMux, server {{$svc.InstanceName}}Server) error {
+{{- if $DelegatePackage}}
+	return {{$DelegatePackage}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx, mux, server)
+{{- else}}
 	{{range $m := $svc.Methods}}
 	{{range $b := $m.Bindings}}
 	{{if or $m.GetClientStreaming $m.GetServerStreaming}}
@@ -667,15 +683,20 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx context.Context,
 	{{end}}
 	{{end}}
 	return nil
+{{- end}}
 }
 {{end}}`))
 
 	trailerTemplate = template.Must(template.New("trailer").Parse(`
 {{$UseRequestContext := .UseRequestContext}}
+{{$DelegatePackage := .DelegatePackage}}
 {{range $svc := .Services}}
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint is same as Register{{$svc.GetName}}{{$.RegisterFuncSuffix}} but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
+{{- if $DelegatePackage}}
+	return {{ $DelegatePackage}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint(ctx, mux, endpoint, opts)
+{{- else}}
 	conn, err := grpc.NewClient(endpoint, opts...)
 	if err != nil {
 		return err
@@ -696,12 +717,17 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint(ctx context.Co
 	}()
 
 	return Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx, mux, conn)
+{{- end}}
 }
 
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}} registers the http handlers for service {{$svc.GetName}} to "mux".
 // The handlers forward requests to the grpc endpoint over "conn".
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error {
+{{- if $DelegatePackage}}
+	return {{$DelegatePackage}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx, mux, conn)
+{{- else}}
 	return Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx, mux, {{$svc.ClientConstructorName}}(conn))
+{{- end}}
 }
 
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client registers the http handlers for service {{$svc.GetName}}
@@ -710,6 +736,9 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx context.Context, mux *
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
 // "{{$svc.InstanceName}}Client" to call the correct interceptors.
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx context.Context, mux *runtime.ServeMux, client {{$svc.InstanceName}}Client) error {
+{{- if $DelegatePackage}}
+	return {{$DelegatePackage}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx, mux, client)
+{{- else}}
 	{{range $m := $svc.Methods}}
 	{{range $b := $m.Bindings}}
 	mux.Handle({{$b.HTTPMethod | printf "%q"}}, pattern_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
@@ -757,6 +786,7 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx context.Context,
 	{{end}}
 	{{end}}
 	return nil
+{{- end}}
 }
 
 {{range $m := $svc.Methods}}
@@ -774,6 +804,7 @@ func (m response_{{$svc.GetName}}_{{$m.GetName}}_{{$b.Index}}) XXX_ResponseBody(
 {{end}}
 {{end}}
 
+{{if not $DelegatePackage}}
 var (
 	{{range $m := $svc.Methods}}
 	{{range $b := $m.Bindings}}
@@ -789,5 +820,7 @@ var (
 	{{end}}
 	{{end}}
 )
-{{end}}`))
+{{end}}
+{{end}}`,
+	))
 )

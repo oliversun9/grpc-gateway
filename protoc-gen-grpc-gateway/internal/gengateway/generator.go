@@ -19,11 +19,18 @@ var errNoTargetService = errors.New("no target service defined in the file")
 type generator struct {
 	reg                *descriptor.Registry
 	baseImports        []descriptor.GoPackage
+	wrapperBaseImports []descriptor.GoPackage
 	useRequestContext  bool
 	registerFuncSuffix string
 	allowPatchFeature  bool
 	standalone         bool
 	separatePackage    bool
+}
+
+var unusedImportPathsForWrapper = map[string]struct{}{
+	"google.golang.org/protobuf/proto": {},
+	"google.golang.org/grpc/grpclog":   {},
+	"net/http":                         {},
 }
 
 // New returns a new generator which generates grpc gateway files.
@@ -36,6 +43,7 @@ func New(
 	separatePackage bool,
 ) gen.Generator {
 	var imports []descriptor.GoPackage
+	var wrapperImports []descriptor.GoPackage
 	for _, pkgpath := range []string{
 		"context",
 		"io",
@@ -64,11 +72,15 @@ func New(
 			}
 		}
 		imports = append(imports, pkg)
+		if _, unused := unusedImportPathsForWrapper[pkg.Path]; !unused {
+			wrapperImports = append(wrapperImports, pkg)
+		}
 	}
 
 	return &generator{
 		reg:                reg,
 		baseImports:        imports,
+		wrapperBaseImports: wrapperImports,
 		useRequestContext:  useRequestContext,
 		registerFuncSuffix: registerFuncSuffix,
 		allowPatchFeature:  allowPatchFeature,
@@ -84,7 +96,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 			grpclog.Infof("Processing %s", file.GetName())
 		}
 
-		code, err := g.generate(file, "")
+		code, err := g.generate(file, nil)
 		if errors.Is(err, errNoTargetService) {
 			if grpclog.V(1) {
 				grpclog.Infof("%s: %v", file.GetName(), err)
@@ -129,7 +141,13 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 		// marking the file (its package) at the wrong path as deprecated.
 		//
 		// If gateway has a new major version, we should then stop generating at the wrong path.
-		code, err = g.generate(file, path.Join(file.GoPkg.Path, file.GoPkg.Name))
+		replacedByPackage := &descriptor.GoPackage{
+			Path: goPkg.Path,
+			Name: goPkg.Name,
+			// TODO: verify if this is needed at all
+			Alias: goPkg.Name + "bufwrap", // what's a good suffix here?
+		}
+		code, err = g.generate(file, replacedByPackage)
 		if errors.Is(err, errNoTargetService) {
 			if grpclog.V(1) {
 				grpclog.Infof("%s: %v", file.GetName(), err)
@@ -158,10 +176,15 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 	return files, nil
 }
 
-func (g *generator) generate(file *descriptor.File, replacedByPackage string) (string, error) {
+func (g *generator) generate(file *descriptor.File, replacedByPackage *descriptor.GoPackage) (string, error) {
 	pkgSeen := make(map[string]bool)
 	var imports []descriptor.GoPackage
-	for _, pkg := range g.baseImports {
+	baseImports := g.baseImports
+	if replacedByPackage != nil {
+		baseImports = g.wrapperBaseImports
+		imports = append(imports, *replacedByPackage)
+	}
+	for _, pkg := range baseImports {
 		pkgSeen[pkg.Path] = true
 		imports = append(imports, pkg)
 	}
@@ -174,7 +197,7 @@ func (g *generator) generate(file *descriptor.File, replacedByPackage string) (s
 		})
 	}
 
-	if g.standalone {
+	if g.standalone && replacedByPackage == nil {
 		imports = append(imports, file.GoPkg)
 	}
 
