@@ -15,6 +15,7 @@ import (
 
 type param struct {
 	*descriptor.File
+	AliasedPkg         *descriptor.GoPackage
 	Imports            []descriptor.GoPackage
 	UseRequestContext  bool
 	RegisterFuncSuffix string
@@ -143,6 +144,7 @@ func (f queryParamFilter) String() string {
 }
 
 type trailerParams struct {
+	AliasedPkg         *descriptor.GoPackage
 	Services           []*descriptor.Service
 	UseRequestContext  bool
 	RegisterFuncSuffix string
@@ -172,11 +174,14 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 			methName := casing.Camel(*meth.Name)
 			meth.Name = &methName
 			for _, b := range meth.Bindings {
+				methodWithBindingsSeen = true
+				if p.AliasedPkg != nil {
+					break
+				}
 				if err := reg.CheckDuplicateAnnotation(b.HTTPMethod, b.PathTmpl.Template, svc); err != nil {
 					return "", err
 				}
 
-				methodWithBindingsSeen = true
 				if err := handlerTemplate.Execute(w, binding{
 					Binding:           b,
 					Registry:          reg,
@@ -204,6 +209,7 @@ func applyTemplate(p param, reg *descriptor.Registry) (string, error) {
 	}
 
 	tp := trailerParams{
+		AliasedPkg:         p.AliasedPkg,
 		Services:           targetServices,
 		UseRequestContext:  p.UseRequestContext,
 		RegisterFuncSuffix: p.RegisterFuncSuffix,
@@ -228,8 +234,15 @@ var (
 Package {{.GoPkg.Name}} is a reverse proxy.
 
 It translates gRPC into RESTful JSON APIs.
+{{if $.AliasedPkg}}
+Deprecated: This package's has an incorrect path due to a bug in a previous version of Buf's patch for this plugin,
+but is kept around for backward compatibility. Use "{{$.AliasedPkg.Path}}" instead.
+{{- end}}
 */{{end}}
 package {{.GoPkg.Name}}
+{{- if $.AliasedPkg}}
+import {{$.AliasedPkg}}
+{{- else}}
 import (
 	{{range $i := .Imports}}{{if $i.Standard}}{{$i | printf "%s\n"}}{{end}}{{end}}
 
@@ -243,6 +256,7 @@ var _ status.Status
 var _ = runtime.String
 var _ = utilities.NewDoubleArray
 var _ = metadata.Join
+{{- end}}
 `))
 
 	handlerTemplate = template.Must(template.New("handler").Parse(`
@@ -606,12 +620,18 @@ func local_request_{{.Method.Service.GetName}}_{{.Method.GetName}}_{{.Index}}(ct
 }`))
 
 	localTrailerTemplate = template.Must(template.New("local-trailer").Parse(`
+{{- if $.AliasedPkg }}
+var (
+{{- end }}
 {{$UseRequestContext := .UseRequestContext}}
 {{range $svc := .Services}}
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server registers the http handlers for service {{$svc.GetName}} to "mux".
 // UnaryRPC     :call {{$svc.GetName}}Server directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
 // Note that using this registration option will cause many gRPC library features to stop working. Consider using Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint instead.
+{{- if $.AliasedPkg}}
+	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server
+{{- else}}
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx context.Context, mux *runtime.ServeMux, server {{$svc.InstanceName}}Server) error {
 	{{range $m := $svc.Methods}}
 	{{range $b := $m.Bindings}}
@@ -663,6 +683,7 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx context.Context,
 	{{end}}
 	return nil
 }
+{{end}}
 {{end}}`))
 
 	trailerTemplate = template.Must(template.New("trailer").Parse(`
@@ -670,6 +691,9 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server(ctx context.Context,
 {{range $svc := .Services}}
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint is same as Register{{$svc.GetName}}{{$.RegisterFuncSuffix}} but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
+{{- if $.AliasedPkg}}
+	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint
+{{- else}}
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) (err error) {
 	conn, err := grpc.NewClient(endpoint, opts...)
 	if err != nil {
@@ -692,18 +716,26 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint(ctx context.Co
 
 	return Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx, mux, conn)
 }
+{{- end}}
 
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}} registers the http handlers for service {{$svc.GetName}} to "mux".
 // The handlers forward requests to the grpc endpoint over "conn".
+{{- if $.AliasedPkg}}
+	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}} = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}
+{{- else}}
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx context.Context, mux *runtime.ServeMux, conn *grpc.ClientConn) error {
 	return Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx, mux, {{$svc.ClientConstructorName}}(conn))
 }
+{{- end}}
 
 // Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client registers the http handlers for service {{$svc.GetName}}
 // to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "{{$svc.InstanceName}}Client".
 // Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "{{$svc.InstanceName}}Client"
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
 // "{{$svc.InstanceName}}Client" to call the correct interceptors.
+{{- if $.AliasedPkg}}
+	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client
+{{- else}}
 func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client(ctx context.Context, mux *runtime.ServeMux, client {{$svc.InstanceName}}Client) error {
 	{{range $m := $svc.Methods}}
 	{{range $b := $m.Bindings}}
@@ -784,5 +816,9 @@ var (
 	{{end}}
 	{{end}}
 )
-{{end}}`))
+{{end}}
+{{end}}
+{{- if $.AliasedPkg}}
+)
+{{- end}}`))
 )

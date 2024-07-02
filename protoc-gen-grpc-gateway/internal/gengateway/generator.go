@@ -84,7 +84,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 			grpclog.Infof("Processing %s", file.GetName())
 		}
 
-		code, err := g.generate(file)
+		code, err := g.generate(file, nil)
 		if errors.Is(err, errNoTargetService) {
 			if grpclog.V(1) {
 				grpclog.Infof("%s: %v", file.GetName(), err)
@@ -99,19 +99,58 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 			grpclog.Errorf("%v: %s", err, code)
 			return nil, err
 		}
-		goPkg := file.GoPkg
-		fileNamePrefix := file.GeneratedFilenamePrefix
-		if g.separatePackage {
-			goPkg = descriptor.GoPackage{
-				Path: path.Join(file.GoPkg.Path, file.GoPkg.Name),
-				Name: file.GoPkg.Name,
-			}
-			// TODO(mf): this is a bug, where we include an extra path element (the filename),
-			// resulting in a stuttering import path. If gateway has a new major version, we should
-			// fix this by removing the last path element from the GeneratedFilenamePrefix.
-			// fileNamePrefix = path.Join(path.Dir(file.GeneratedFilenamePrefix), file.GoPkg.Name, path.Base(file.GeneratedFilenamePrefix))
-			fileNamePrefix = path.Join(file.GeneratedFilenamePrefix, file.GoPkg.Name, path.Base(file.GeneratedFilenamePrefix))
+		if !g.separatePackage {
+			files = append(files, &descriptor.ResponseFile{
+				GoPkg: file.GoPkg,
+				CodeGeneratorResponse_File: &pluginpb.CodeGeneratorResponse_File{
+					Name:    proto.String(file.GeneratedFilenamePrefix + ".pb.gw.go"),
+					Content: proto.String(string(formatted)),
+				},
+			})
+			continue
 		}
+		goPkg := descriptor.GoPackage{
+			Path: path.Join(file.GoPkg.Path, file.GoPkg.Name),
+			Name: file.GoPkg.Name,
+		}
+		fileNamePrefix := path.Join(path.Dir(file.GeneratedFilenamePrefix), file.GoPkg.Name, path.Base(file.GeneratedFilenamePrefix))
+		files = append(files, &descriptor.ResponseFile{
+			GoPkg: goPkg,
+			CodeGeneratorResponse_File: &pluginpb.CodeGeneratorResponse_File{
+				Name:    proto.String(fileNamePrefix + ".pb.gw.go"),
+				Content: proto.String(string(formatted)),
+			},
+		})
+		// There was a bug where we include an extra path element (the filename), resulting
+		// in a stuttering import path. Fixing this bug cannot involve removing the Go file
+		// generated at the wrong path, because that would be a breaking change.
+		//
+		// Instead, we generate the same file both at the right path and at the wrong path,
+		// marking the file (its package) at the wrong path as deprecated.
+		//
+		// If gateway has a new major version, we should then stop generating at the wrong path.
+		aliasedPackage := &descriptor.GoPackage{
+			Path:  goPkg.Path,
+			Name:  goPkg.Name,
+			Alias: "aliased", // what's a good name here?
+		}
+		code, err = g.generate(file, aliasedPackage)
+		if errors.Is(err, errNoTargetService) {
+			if grpclog.V(1) {
+				grpclog.Infof("%s: %v", file.GetName(), err)
+			}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		formatted, err = format.Source([]byte(code))
+		if err != nil {
+			grpclog.Errorf("%v: %s", err, code)
+			return nil, err
+		}
+		// The prefix is incorrect, but we are still generating it for backwards compatibility.
+		fileNamePrefix = path.Join(file.GeneratedFilenamePrefix, file.GoPkg.Name, path.Base(file.GeneratedFilenamePrefix))
 		files = append(files, &descriptor.ResponseFile{
 			GoPkg: goPkg,
 			CodeGeneratorResponse_File: &pluginpb.CodeGeneratorResponse_File{
@@ -123,7 +162,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 	return files, nil
 }
 
-func (g *generator) generate(file *descriptor.File) (string, error) {
+func (g *generator) generate(file *descriptor.File, aliasedPkg *descriptor.GoPackage) (string, error) {
 	pkgSeen := make(map[string]bool)
 	var imports []descriptor.GoPackage
 	for _, pkg := range g.baseImports {
@@ -156,6 +195,7 @@ func (g *generator) generate(file *descriptor.File) (string, error) {
 		}
 	}
 	params := param{
+		AliasedPkg:         aliasedPkg,
 		File:               file,
 		Imports:            imports,
 		UseRequestContext:  g.useRequestContext,
