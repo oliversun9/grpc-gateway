@@ -1,6 +1,7 @@
 package gengateway
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -75,6 +76,18 @@ func newExampleFileDescriptorWithGoPkg(gp *descriptor.GoPackage, filenamePrefix 
 			},
 		},
 	}
+}
+
+func newExampleFileDescriptorWithGoPkgWithoutBinding(gp *descriptor.GoPackage, filenamePrefix string) *descriptor.File {
+	file := newExampleFileDescriptorWithGoPkg(gp, filenamePrefix)
+	for _, service := range file.Services {
+		for _, method := range service.Methods {
+			if method != nil {
+				method.Bindings = nil
+			}
+		}
+	}
+	return file
 }
 
 func TestGenerator_Generate(t *testing.T) {
@@ -164,12 +177,13 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 		t.Errorf("invalid name %q, expected %q", result[0].GoPkg.Name, expectedGoPkgName)
 	}
 	// Require the two dependencies to be declared as imported packages
+	correctFileContent := correctFile.GetContent()
 	for _, expectedImport := range []string{
 		`extalias "example.com/mymodule/foo/bar/v1"`,
 		`"example.com/mymodule/foo/bar/v1/v1grpc"`,
 	} {
-		if !strings.Contains(correctFile.GetContent(), expectedImport) {
-			t.Errorf("expected to find import %q in the generated file: %s", expectedImport, correctFile.GetContent()[:400])
+		if !strings.Contains(correctFileContent, expectedImport) {
+			t.Errorf("expected to find import %q in the generated file: %s", expectedImport, correctFileContent[:400])
 		}
 	}
 
@@ -188,9 +202,80 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 	if aliasFile.GoPkg.Name != expectedGoPkgName {
 		t.Errorf("invalid name %q, expected %q", aliasFile.GoPkg.Name, expectedGoPkgName)
 	}
+	aliasFileContent := aliasFile.GetContent()
 	// Require the two dependencies to be declared as imported packages
 	expectedImport := `aliased "example.com/mymodule/foo/bar/v1/v1gateway"`
-	if !strings.Contains(aliasFile.GetContent(), expectedImport) {
-		t.Errorf("expected to find import %q in the generated file: %s...", expectedImport, aliasFile.GetContent()[:500])
+	if !strings.Contains(aliasFileContent, expectedImport) {
+		t.Errorf("expected to find import %q in the generated file: %s...", expectedImport, aliasFileContent[:500])
+	}
+	aliasedFunctions := []string{
+		"RegisterExampleServiceHandlerServer",
+		"RegisterExampleServiceHandlerClient",
+		"RegisterExampleServiceHandlerFromEndpoint",
+		"RegisterExampleServiceHandler",
+	}
+	for _, aliasedFunction := range aliasedFunctions {
+		aliasDefinition := fmt.Sprintf("%[1]s = aliased.%[1]s", aliasedFunction)
+		if !strings.Contains(aliasFileContent, aliasDefinition) {
+			t.Fatalf("expected %q in the alias file: %s", aliasDefinition, aliasFileContent)
+		}
+		if strings.Contains(correctFileContent, aliasDefinition) {
+			t.Fatalf("unexpected alias %q in the correct file: %s", aliasDefinition, correctFileContent)
+		}
+	}
+}
+
+func TestGenerator_GenerateSeparatePackage_WithoutBinding(t *testing.T) {
+	reg := descriptor.NewRegistry()
+	reg.SetSeparatePackage(true)
+	reg.SetStandalone(true)
+	g := New(reg, true, "Handler", true, true, true)
+	targets := []*descriptor.File{
+		crossLinkFixture(newExampleFileDescriptorWithGoPkgWithoutBinding(&descriptor.GoPackage{
+			Path:  "example.com/mymodule/foo/bar/v1",
+			Name:  "v1" + "gateway",
+			Alias: "extalias",
+		}, "foo/bar/v1/example")),
+	}
+	result, err := g.Generate(targets)
+	if err != nil {
+		t.Fatalf("failed to generate stubs: %v", err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected to generate 0 file, got: %d", len(result))
+	}
+}
+
+func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc(t *testing.T) {
+	reg := descriptor.NewRegistry()
+	reg.SetSeparatePackage(true)
+	reg.SetStandalone(true)
+	reg.SetOmitPackageDoc(true)
+	g := New(reg, true, "Handler", true, true, true)
+	targets := []*descriptor.File{
+		crossLinkFixture(newExampleFileDescriptorWithGoPkg(&descriptor.GoPackage{
+			Path:  "example.com/mymodule/foo/bar/v1",
+			Name:  "v1" + "gateway",
+			Alias: "extalias",
+		}, "foo/bar/v1/example")),
+	}
+	result, err := g.Generate(targets)
+	if err != nil {
+		t.Fatalf("failed to generate stubs: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected to generate 2 files, got: %d", len(result))
+	}
+	correctFileContent := result[0].GetContent()
+	if strings.Contains(correctFileContent, "Deprecated:") {
+		t.Errorf("the correct file should not be deprecated: %s...", correctFileContent[:500])
+	}
+	deprecationDoc := `/*
+Deprecated: This package has moved to "example.com/mymodule/foo/bar/v1/v1gateway". Use that import path instead.
+*/`
+	aliasFileContent := result[1].GetContent()
+	// Even though omit_package_doc is set, we still need to deprecate the package.
+	if !strings.Contains(aliasFileContent, deprecationDoc) {
+		t.Errorf("expected to find deprecation doc in the alias file: %s...", aliasFileContent[:500])
 	}
 }
