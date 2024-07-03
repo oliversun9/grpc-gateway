@@ -106,10 +106,10 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 	g := New(reg, true, "Handler", true, true, true)
 	targets := []*descriptor.File{
 		crossLinkFixture(newExampleFileDescriptorWithGoPkg(&descriptor.GoPackage{
-			Path:  "example.com/path/to/example",
-			Name:  "example" + "gateway",
-			Alias: "extexample",
-		}, "path/to/example")),
+			Path:  "example.com/mymodule/foo/bar/v1",
+			Name:  "v1" + "gateway", // Name is appended with "gateway" with standalone set to true.
+			Alias: "extalias",
+		}, "foo/bar/v1/example")),
 	}
 	// Set ForcePrefixedName (usually set when standalone=true).
 	for _, f := range targets {
@@ -144,27 +144,53 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate stubs: %v", err)
 	}
-	if len(result) != 1 {
-		t.Fatalf("expected to generate one file, got: %d", len(result))
+	if len(result) != 2 {
+		t.Fatalf("expected to generate 2 files, got: %d", len(result))
 	}
-	expectedName := "path/to/example/examplegateway/example.pb.gw.go"
-	gotName := result[0].GetName()
-	if gotName != expectedName {
-		t.Fatalf("invalid name %q, expected %q", gotName, expectedName)
+	expectedName := "foo/bar/v1/v1gateway/example.pb.gw.go"
+	expectedGoPkgPath := "example.com/mymodule/foo/bar/v1/v1gateway"
+	expectedGoPkgName := "v1gateway"
+	correctFile := result[0]
+	if correctFile == nil {
+		t.Fatal("result is nil")
 	}
-	if result[0].GoPkg.Path != "example.com/path/to/example/examplegateway" {
-		t.Fatalf("invalid path %q, expected %q", result[0].GoPkg.Path, "example.com/path/to/example/examplegateway")
+	if correctFile.GetName() != expectedName {
+		t.Errorf("invalid name %q, expected %q", correctFile.GetName(), expectedName)
 	}
-	if result[0].GoPkg.Name != "examplegateway" {
-		t.Fatalf("invalid name %q, expected %q", result[0].GoPkg.Name, "examplegateway")
+	if correctFile.GoPkg.Path != expectedGoPkgPath {
+		t.Errorf("invalid path %q, expected %q", result[0].GoPkg.Path, expectedGoPkgPath)
+	}
+	if correctFile.GoPkg.Name != expectedGoPkgName {
+		t.Errorf("invalid name %q, expected %q", result[0].GoPkg.Name, expectedGoPkgName)
 	}
 	// Require the two dependencies to be declared as imported packages
 	for _, expectedImport := range []string{
-		`extexample "example.com/path/to/example"`,
-		`"example.com/path/to/example/examplegrpc"`,
+		`extalias "example.com/mymodule/foo/bar/v1"`,
+		`"example.com/mymodule/foo/bar/v1/v1grpc"`,
 	} {
-		if !strings.Contains(result[0].GetContent(), expectedImport) {
-			t.Fatalf("expected to find import %q in the generated file", expectedImport)
+		if !strings.Contains(correctFile.GetContent(), expectedImport) {
+			t.Errorf("expected to find import %q in the generated file: %s", expectedImport, correctFile.GetContent()[:400])
 		}
+	}
+
+	expectedName = "foo/bar/v1/example/v1gateway/example.pb.gw.go"
+	// wrong path but correct go package
+	aliasFile := result[1]
+	if aliasFile == nil {
+		t.Fatal("result is nil")
+	}
+	if aliasFile.GetName() != expectedName {
+		t.Errorf("invalid name %q, expected %q", aliasFile.GetName(), expectedName)
+	}
+	if aliasFile.GoPkg.Path != expectedGoPkgPath {
+		t.Errorf("invalid path %q, expected %q", aliasFile.GoPkg.Path, expectedGoPkgPath)
+	}
+	if aliasFile.GoPkg.Name != expectedGoPkgName {
+		t.Errorf("invalid name %q, expected %q", aliasFile.GoPkg.Name, expectedGoPkgName)
+	}
+	// Require the two dependencies to be declared as imported packages
+	expectedImport := `aliased "example.com/mymodule/foo/bar/v1/v1gateway"`
+	if !strings.Contains(aliasFile.GetContent(), expectedImport) {
+		t.Errorf("expected to find import %q in the generated file: %s...", expectedImport, aliasFile.GetContent()[:500])
 	}
 }
