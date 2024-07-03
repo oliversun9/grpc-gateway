@@ -279,3 +279,30 @@ Deprecated: This package has moved to "example.com/mymodule/foo/bar/v1/v1gateway
 		t.Errorf("expected to find deprecation doc in the alias file: %s...", aliasFileContent[:500])
 	}
 }
+
+func TestGenerator_GenerateSeparatePackage_WithoutService(t *testing.T) {
+	reg := descriptor.NewRegistry()
+	reg.SetSeparatePackage(true)
+	reg.SetStandalone(true)
+	g := New(reg, true, "Handler", true, true, true)
+	targets := []*descriptor.File{
+		{
+			FileDescriptorProto: &descriptorpb.FileDescriptorProto{
+				Name:    proto.String("example.proto"),
+				Package: proto.String("example"),
+			},
+			GoPkg: descriptor.GoPackage{
+				Path: "foo/bar/baz/gen/v1",
+				Name: "v1",
+			},
+			GeneratedFilenamePrefix: "gen/v1/example",
+		},
+	}
+	result, err := g.Generate(targets)
+	if err != nil {
+		t.Fatalf("failed to generate stubs: %v", err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected to generate 0 file, got: %d", len(result))
+	}
+}
