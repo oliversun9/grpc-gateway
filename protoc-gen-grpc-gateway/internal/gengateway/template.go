@@ -235,10 +235,14 @@ Package {{.GoPkg.Name}} is a reverse proxy.
 
 It translates gRPC into RESTful JSON APIs.
 {{if $.AliasedPkg}}
-Deprecated: This package's has an incorrect path due to a bug in a previous version of Buf's patch for this plugin,
-but is kept around for backward compatibility. Use "{{$.AliasedPkg.Path}}" instead.
+Deprecated: This package has moved to "{{$.AliasedPkg.Path}}". Use that import path instead.
 {{- end}}
-*/{{end}}
+*/
+{{- else if $.AliasedPkg}}
+/*
+Deprecated: This package has moved to "{{$.AliasedPkg.Path}}". Use that import path instead.
+*/
+{{- end}}
 package {{.GoPkg.Name}}
 {{- if $.AliasedPkg}}
 import {{$.AliasedPkg}}
