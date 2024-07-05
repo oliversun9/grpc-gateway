@@ -132,7 +132,7 @@ func (g *generator) Generate(targets []*descriptor.File) ([]*descriptor.Response
 		aliasedPackage := &descriptor.GoPackage{
 			Path:  goPkg.Path,
 			Name:  goPkg.Name,
-			Alias: "aliased", // what's a good name here?
+			Alias: "gateway",
 		}
 		code, err = g.generate(file, aliasedPackage)
 		if errors.Is(err, errNoTargetService) {

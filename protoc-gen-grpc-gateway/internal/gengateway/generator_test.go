@@ -204,7 +204,7 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 	}
 	aliasFileContent := aliasFile.GetContent()
 	// Require the two dependencies to be declared as imported packages
-	expectedImport := `aliased "example.com/mymodule/foo/bar/v1/v1gateway"`
+	expectedImport := `gateway "example.com/mymodule/foo/bar/v1/v1gateway"`
 	if !strings.Contains(aliasFileContent, expectedImport) {
 		t.Errorf("expected to find import %q in the generated file: %s...", expectedImport, aliasFileContent[:500])
 	}
@@ -215,7 +215,7 @@ func TestGenerator_GenerateSeparatePackage(t *testing.T) {
 		"RegisterExampleServiceHandler",
 	}
 	for _, aliasedFunction := range aliasedFunctions {
-		aliasDefinition := fmt.Sprintf("%[1]s = aliased.%[1]s", aliasedFunction)
+		aliasDefinition := fmt.Sprintf("%[1]s = gateway.%[1]s", aliasedFunction)
 		if !strings.Contains(aliasFileContent, aliasDefinition) {
 			t.Fatalf("expected %q in the alias file: %s", aliasDefinition, aliasFileContent)
 		}
