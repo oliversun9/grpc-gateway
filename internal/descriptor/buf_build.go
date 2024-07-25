@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+const (
+	BaseTypePackageSubPath = baseTypePackageName + "/go"
+	// TODO: change "v2" to "v3" when v3 of grpc gateway is released,
+	// or, even better, stop generating at the extra location.
+	GatewayPackageSubPath = "grpc-ecosystem/gateway/v2"
+)
+
+const (
+	baseTypePackageName = "protocolbuffers"
+	grpcPackageName     = "grpc"
+	grpcPackageSubPath  = grpcPackageName + "/go"
+)
+
 // SetSeparatePackage sets separatePackage
 func (r *Registry) SetSeparatePackage(use bool) {
 	r.separatePackage = use
@@ -22,12 +35,7 @@ func (r *Registry) IncludeAdditionalImports(svc *Service, goPkg GoPackage) {
 	// for the gRPC stubs that are no longer in the same package. This is done by adding the grpc
 	// package to the additionalImports list. In order to prepare a valid import statement, we'll replace
 	// the source package name, something like: ../pet/v1/v1petgateway with ../pet/v1/v1petgrpc
-	const (
-		baseTypePackageName    = "protocolbuffers"
-		baseTypePackageSubPath = baseTypePackageName + "/go"
-		grpcPackageName        = "grpc"
-		grpcPackageSubPath     = grpcPackageName + "/go"
-	)
+
 	packageName := strings.TrimSuffix(goPkg.Name, "gateway") + grpcPackageName
 	svc.GRPCFile = &File{
 		GoPkg: GoPackage{
@@ -36,11 +44,11 @@ func (r *Registry) IncludeAdditionalImports(svc *Service, goPkg GoPackage) {
 			// options as a basis, and replace the source package name with the grpc package name.
 			Path: strings.Replace(
 				filepath.Join(goPkg.Path, packageName),
-				baseTypePackageSubPath,
+				BaseTypePackageSubPath,
 				grpcPackageSubPath,
 				1,
 			),
-			Name: strings.Replace(packageName, baseTypePackageSubPath, grpcPackageSubPath, 1),
+			Name: strings.Replace(packageName, BaseTypePackageSubPath, grpcPackageSubPath, 1),
 		},
 	}
 	r.additionalImports[goPkg.Path] = append(r.additionalImports[goPkg.Path], svc.GRPCFile.GoPkg.Path)

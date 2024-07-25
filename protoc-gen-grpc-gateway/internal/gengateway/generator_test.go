@@ -305,7 +305,7 @@ func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc_Generate_SDK(t *te
 		t.Errorf("the correct file should not be deprecated: %s...", correctFileContent[:500])
 	}
 	deprecationDoc := `/*
-Deprecated: This package has moved to "example.com/gen/go/owner/module/grpc-ecosystem/gateway/foo/bar/v1/v1gateway". Use that import path instead.
+Deprecated: This package has moved to "example.com/gen/go/owner/module/grpc-ecosystem/gateway/v2/foo/bar/v1/v1gateway". Use that import path instead.
 */`
 	aliasFileContent := result[1].GetContent()
 	// Even though omit_package_doc is set, we still need to deprecate the package.
