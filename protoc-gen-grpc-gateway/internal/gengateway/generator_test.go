@@ -246,7 +246,7 @@ func TestGenerator_GenerateSeparatePackage_WithoutBinding(t *testing.T) {
 	}
 }
 
-func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc(t *testing.T) {
+func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc_Local(t *testing.T) {
 	reg := descriptor.NewRegistry()
 	reg.SetSeparatePackage(true)
 	reg.SetStandalone(true)
@@ -272,6 +272,40 @@ func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc(t *testing.T) {
 	}
 	deprecationDoc := `/*
 Deprecated: This package has moved to "example.com/mymodule/foo/bar/v1/v1gateway". Use that import path instead.
+*/`
+	aliasFileContent := result[1].GetContent()
+	// Even though omit_package_doc is set, we still need to deprecate the package.
+	if !strings.Contains(aliasFileContent, deprecationDoc) {
+		t.Errorf("expected to find deprecation doc in the alias file: %s...", aliasFileContent[:500])
+	}
+}
+
+func TestGenerator_GenerateSeparatePackage_WithOmitPackageDoc_Generate_SDK(t *testing.T) {
+	reg := descriptor.NewRegistry()
+	reg.SetSeparatePackage(true)
+	reg.SetStandalone(true)
+	reg.SetOmitPackageDoc(true)
+	g := New(reg, true, "Handler", true, true, true)
+	targets := []*descriptor.File{
+		crossLinkFixture(newExampleFileDescriptorWithGoPkg(&descriptor.GoPackage{
+			Path:  "example.com/gen/go/owner/module/protocolbuffers/go/foo/bar/v1",
+			Name:  "v1" + "gateway",
+			Alias: "extalias",
+		}, "foo/bar/v1/example")),
+	}
+	result, err := g.Generate(targets)
+	if err != nil {
+		t.Fatalf("failed to generate stubs: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected to generate 2 files, got: %d", len(result))
+	}
+	correctFileContent := result[0].GetContent()
+	if strings.Contains(correctFileContent, "Deprecated:") {
+		t.Errorf("the correct file should not be deprecated: %s...", correctFileContent[:500])
+	}
+	deprecationDoc := `/*
+Deprecated: This package has moved to "example.com/gen/go/owner/module/grpc-ecosystem/gateway/foo/bar/v1/v1gateway". Use that import path instead.
 */`
 	aliasFileContent := result[1].GetContent()
 	// Even though omit_package_doc is set, we still need to deprecate the package.
