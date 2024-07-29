@@ -5,25 +5,25 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "com_google_googletest",
-    sha256 = "1f357c27ca988c3f7c6b4bf68a9395005ac6761f034046e9dde0896e3aba00e4",
-    strip_prefix = "googletest-1.14.0",
-    urls = ["https://github.com/google/googletest/archive/v1.14.0.zip"],
+    sha256 = "ed98258b96c6dc8af33eeb03c8d94a05b185866604382e12980f576595bdc509",
+    strip_prefix = "googletest-1.15.0",
+    urls = ["https://github.com/google/googletest/archive/v1.15.0.zip"],
 )
 
 # Define before rules_proto, otherwise we receive the version of com_google_protobuf from there
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "4fc5ff1b2c339fb86cd3a25f0b5311478ab081e65ad258c6789359cd84d421f8",
-    strip_prefix = "protobuf-26.1",
-    urls = ["https://github.com/protocolbuffers/protobuf/archive/v26.1.tar.gz"],
+    sha256 = "e4ff2aeb767da6f4f52485c2e72468960ddfe5262483879ef6ad552e52757a77",
+    strip_prefix = "protobuf-27.2",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v27.2.tar.gz"],
 )
 
 http_archive(
     name = "googleapis",
-    sha256 = "180b98abd48ba6f047e590a3d4a684aecbeb6f43e59262437d0ed5d22b42f7f9",
-    strip_prefix = "googleapis-61a066c96af685a0190603e0c1e09ac1adb25ef0",
+    sha256 = "a06fe17496d26a110609ab24ce7c30bc6fc1324dc36cdfaf6323a7014f94ae40",
+    strip_prefix = "googleapis-3f4e29a88f2e1f412439e61c48c88f81dec0bbbf",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/61a066c96af685a0190603e0c1e09ac1adb25ef0.zip",
+        "https://github.com/googleapis/googleapis/archive/3f4e29a88f2e1f412439e61c48c88f81dec0bbbf.zip",
     ],
 )
 
@@ -35,10 +35,10 @@ switched_rules_by_language(
 
 http_archive(
     name = "bazel_skylib",
-    sha256 = "9f38886a40548c6e96c106b752f242130ee11aaa068a56ba7e56f4511f33e4f2",
+    sha256 = "bc283cdfcd526a52c3201279cda4bc298652efa898b10b4db0837dc51652756f",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.6.1/bazel-skylib-1.6.1.tar.gz",
-        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.6.1/bazel-skylib-1.6.1.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
     ],
 )
 
@@ -78,10 +78,10 @@ go_register_toolchains(version = "1.20.6")
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "75df288c4b31c81eb50f51e2e14f4763cb7548daae126817247064637fd9ea62",
+    sha256 = "d76bf7a60fd8b050444090dfa2837a4eaf9829e1165618ee35dceca5cbdf58d5",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.36.0/bazel-gazelle-v0.36.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.36.0/bazel-gazelle-v0.36.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.37.0/bazel-gazelle-v0.37.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.37.0/bazel-gazelle-v0.37.0.tar.gz",
     ],
 )
 
@@ -104,9 +104,9 @@ protobuf_deps()
 
 http_archive(
     name = "com_github_bazelbuild_buildtools",
-    sha256 = "60a9025072ae237f325d0e7b661e1685f34922c29883888c2d06f5789462b939",
-    strip_prefix = "buildtools-7.1.1",
-    urls = ["https://github.com/bazelbuild/buildtools/archive/v7.1.1.tar.gz"],
+    sha256 = "39c59cb5352892292cbe3174055aac187edcb5324c9b4e2d96cb6e40bd753877",
+    strip_prefix = "buildtools-7.1.2",
+    urls = ["https://github.com/bazelbuild/buildtools/archive/v7.1.2.tar.gz"],
 )
 
 load("@com_github_bazelbuild_buildtools//buildifier:deps.bzl", "buildifier_dependencies")

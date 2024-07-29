@@ -633,6 +633,7 @@ var (
 // UnaryRPC     :call {{$svc.GetName}}Server directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
 // Note that using this registration option will cause many gRPC library features to stop working. Consider using Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}FromEndpoint instead.
+// GRPC interceptors will not work for this type of registration. To use interceptors, you must use the "runtime.WithMiddlewares" option in the "runtime.NewServeMux" call.
 {{- if $.AliasedPkg}}
 	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Server
 {{- else}}
@@ -736,7 +737,7 @@ func Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}(ctx context.Context, mux *
 // to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "{{$svc.InstanceName}}Client".
 // Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "{{$svc.InstanceName}}Client"
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
-// "{{$svc.InstanceName}}Client" to call the correct interceptors.
+// "{{$svc.InstanceName}}Client" to call the correct interceptors. This client ignores the HTTP middlewares.
 {{- if $.AliasedPkg}}
 	Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client = {{$.AliasedPkg.Alias}}.Register{{$svc.GetName}}{{$.RegisterFuncSuffix}}Client
 {{- else}}
